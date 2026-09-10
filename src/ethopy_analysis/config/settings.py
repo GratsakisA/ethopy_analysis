@@ -24,6 +24,8 @@ DEFAULT_CONFIG = {
             "experiment": "lab_experiments",
             "stimulus": "lab_stimuli",
             "behavior": "lab_behavior",
+            # Optional schema, only needed for animal weight analysis
+            "mice": "lab_mice",
         },
     },
     "paths": {"output_dir": "./output", "config_dir": "./config"},
@@ -127,6 +129,7 @@ def _parse_ethopy_local_conf(ethopy_config: Dict[str, Any]) -> Dict[str, Any]:
         "experiment": schemata.get("experiment", default_schemas["experiment"]),
         "behavior": schemata.get("behavior", default_schemas["behavior"]),
         "stimulus": schemata.get("stimulus", default_schemas["stimulus"]),
+        "mice": schemata.get("mice", default_schemas["mice"]),
     }
 
     host = dj_conf.get("database.host", "")

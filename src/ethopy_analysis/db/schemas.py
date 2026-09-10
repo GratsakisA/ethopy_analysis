@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 # Simple cache using connection string as key
 _cached_schemas: Dict[str, Dict[str, Any]] = {}
 
+# Schemas that every ethopy installation is expected to provide. Any other
+# configured schema (e.g. 'mice') is optional: it is never created on the
+# server and a missing one only warns instead of breaking the connection.
+REQUIRED_SCHEMAS = ("experiment", "stimulus", "behavior")
+
 
 # Public API - Main user interface
 
@@ -353,15 +358,29 @@ def _create_schemas(custom_schemata: Optional[Dict[str, str]] = None) -> Dict[st
             "experiment": "lab_experiments",
             "stimulus": "lab_stimuli",
             "behavior": "lab_behavior",
+            "mice": "lab_mice",
         }
 
     # Create virtual modules for each schema
     schemas = {}
     for schema_name, actual_schema in schemata.items():
         logger.debug(f"Creating virtual module for {schema_name} -> {actual_schema}")
-        schemas[schema_name] = dj.create_virtual_module(
-            schema_name, actual_schema, create_tables=True, create_schema=True
-        )
+        if schema_name in REQUIRED_SCHEMAS:
+            schemas[schema_name] = dj.create_virtual_module(
+                schema_name, actual_schema, create_tables=True, create_schema=True
+            )
+            continue
+
+        # Optional schema: attach to it only if it already exists on the server
+        try:
+            schemas[schema_name] = dj.create_virtual_module(
+                schema_name, actual_schema, create_tables=False, create_schema=False
+            )
+        except Exception as e:
+            logger.warning(
+                f"Optional schema '{schema_name}' -> '{actual_schema}' is not "
+                f"available and was skipped: {e}"
+            )
 
     logger.info(f"Created {len(schemas)} virtual schema modules")
     return schemas

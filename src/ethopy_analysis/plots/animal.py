@@ -3,6 +3,7 @@ from datetime import date
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib as mpl
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -264,3 +265,86 @@ def plot_trial_per_session(
 
     if save_path:
         save_plot(plt.gcf(), save_path)
+
+
+def plot_animal_weight(
+    weight_df: pd.DataFrame,
+    animal_id: Optional[int] = None,
+    count_from: int = 5,
+    thresholds: Tuple[float, ...] = (0.7, 0.8, 0.9),
+    save_path: Optional[str] = None,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Plot the weight of an animal over time with water deprivation limits.
+
+    Creates a line plot of every weight measurement, with a horizontal line for
+    each fraction of the reference weight, so weight loss can be tracked against
+    the humane endpoints.
+
+    Args:
+        weight_df: DataFrame of weight measurements with columns:
+            - 'timestamp': Time of the measurement
+            - 'weight': Weight in grams
+            - 'animal_id': Animal identifier (used if animal_id is None)
+        animal_id: The animal identifier, used for the title. Taken from the
+            DataFrame if None.
+        count_from: Index of the measurement used as the reference weight,
+            counted from the first one. Adjust it to the start of water
+            deprivation. Defaults to 5.
+        thresholds: Fractions of the reference weight to draw as limit lines.
+            Defaults to (0.7, 0.8, 0.9).
+        save_path: Path to save the plot image. If None, plot is not saved.
+
+    Returns:
+        Tuple of the figure and axes of the plot.
+
+    Raises:
+        ValueError: If the DataFrame is empty or has fewer than
+            count_from + 1 measurements.
+    """
+    if weight_df.empty:
+        raise ValueError("No weight measurements to plot")
+
+    if len(weight_df) <= count_from:
+        raise ValueError(
+            f"{len(weight_df)} weight measurements, "
+            f"count_from={count_from} needs at least {count_from + 1}"
+        )
+
+    if animal_id is None:
+        animal_id = weight_df["animal_id"].iloc[0]
+
+    weight_df = weight_df.sort_values("timestamp")
+    reference_weight = weight_df["weight"].iloc[count_from]
+
+    fig, ax = plt.subplots(figsize=(10, 3))
+    ax.plot(
+        weight_df["timestamp"],
+        weight_df["weight"],
+        linestyle="--",
+        marker="o",
+        label="weight",
+    )
+
+    colors = ["red", "pink", "green", "orange", "purple"]
+    for i, threshold in enumerate(thresholds):
+        ax.axhline(
+            threshold * reference_weight,
+            linestyle="--",
+            color=colors[i % len(colors)],
+            label=f"-{round((1 - threshold) * 100)}%",
+        )
+
+    ax.set_ylabel("Mouse weight (gr)")
+    ax.set_xlabel("Time")
+    ax.set_title(f"Animal id: {animal_id}")
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d-%m-%y"))
+    ax.tick_params(axis="x", labelrotation=45)
+    ax.grid()
+    ax.legend()
+    fig.tight_layout()
+
+    if save_path:
+        save_plot(fig, save_path)
+
+    return fig, ax

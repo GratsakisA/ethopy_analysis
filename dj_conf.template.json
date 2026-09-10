@@ -3,7 +3,8 @@
     "schemas": {
       "experiment": "lab_experiments",
       "stimulus": "lab_stimuli",
-      "behavior": "lab_behavior"
+      "behavior": "lab_behavior",
+      "mice": "lab_mice"
     }
   },
   "paths": {

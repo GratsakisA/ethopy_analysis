@@ -68,7 +68,8 @@ Used by Methods 2–4 above.
     "schemas": {
       "experiment": "lab_experiments",
       "stimulus": "lab_stimuli",
-      "behavior": "lab_behavior"
+      "behavior": "lab_behavior",
+      "mice": "lab_mice"
     }
   },
   "paths": {
@@ -94,7 +95,8 @@ The relevant fields that are read are:
   "SCHEMATA": {
     "experiment": "lab_experiments",
     "behavior": "lab_behavior",
-    "stimulus": "lab_stimuli"
+    "stimulus": "lab_stimuli",
+    "mice": "lab_mice"
   }
 }
 ```
@@ -116,10 +118,13 @@ If `SCHEMATA` is absent, default schema names are used.
   "schemas": {
     "experiment": "lab_experiments",
     "stimulus": "lab_stimuli",
-    "behavior": "lab_behavior"
+    "behavior": "lab_behavior",
+    "mice": "lab_mice"
   }
 }
 ```
+
+`experiment`, `stimulus` and `behavior` are required. `mice` is optional and only needed for the animal weight functions. It is never created on the server: if the schema does not exist, it is skipped with a warning and everything else keeps working.
 
 ## Environment Variables
 

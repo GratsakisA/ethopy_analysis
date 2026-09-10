@@ -1042,3 +1042,45 @@ def get_session_proximity_data(
         )
 
     return pd.DataFrame(rows)
+
+
+def get_mouse_weight(
+    animal_id: int, from_date: str = "", to_date: str = "", format: str = "df"
+) -> Union[pd.DataFrame, Any]:
+    """
+    Get the weight measurements of an animal, sorted by timestamp.
+
+    Requires the optional 'mice' schema to be configured and available.
+
+    Args:
+        animal_id (int): The animal identifier
+        from_date (str, optional): Start date in format 'YYYY-MM-DD'. Defaults to ''.
+        to_date (str, optional): End date in format 'YYYY-MM-DD'. Defaults to ''.
+        format (str, optional): if format equals 'dj' return datajoint expression.
+
+    Returns:
+        Union[pd.DataFrame, Any]: DataFrame with columns 'animal_id', 'timestamp'
+            and 'weight' sorted by timestamp if format="df", MouseWeight
+            expression if format="dj"
+
+    Raises:
+        ValueError: If the 'mice' schema is not available.
+    """
+    mice = get_schema("mice")
+    if mice is None:
+        raise ValueError(
+            "The 'mice' schema is not available. Add it to the 'schemas' section "
+            "of your configuration file, e.g. \"mice\": \"lab_mice\"."
+        )
+
+    weight_dj = mice.MouseWeight & {"animal_id": animal_id}
+    if from_date != "":
+        weight_dj = weight_dj & f'timestamp > "{from_date}"'
+    if to_date != "":
+        weight_dj = weight_dj & f'timestamp < "{to_date}"'
+
+    if format == "dj":
+        return weight_dj
+
+    weight_df = weight_dj.fetch(format="frame").reset_index()
+    return weight_df.sort_values("timestamp").reset_index(drop=True)
