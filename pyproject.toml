@@ -17,42 +17,61 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
     "Topic :: Scientific/Engineering :: Visualization",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
+# Upper bounds are applied only where a specific incompatibility is known and
+# reproducible. Speculative caps ("the next major might break us") are avoided:
+# they cannot prevent breakage, they only make the package uninstallable
+# alongside newer dependencies, and lifting one requires a release. For a
+# byte-for-byte reproducible environment use constraints.txt instead.
 dependencies = [
-    "datajoint<2.0.0",
+    # Capped: datajoint 2.0 is a documented breaking API change.
+    "datajoint>=0.14.0,<2.0.0",
+    "setuptools<82",
+    # Capped: PyMySQL 1.2.0 attempts TLS opportunistically, so connecting to a
+    # server with legacy TLS (e.g. MySQL 5.7) fails with
+    # SSLV3_ALERT_HANDSHAKE_FAILURE. This is not configurable from here:
+    # datajoint's use_tls=False merely omits the `ssl` argument, and never
+    # passes PyMySQL's `ssl_disabled=True`, which is the only setting that
+    # connects. PyMySQL arrives transitively via datajoint, which does not
+    # bound it. Drop this cap once datajoint passes ssl_disabled.
+    "pymysql<1.2.0",
+    # Uncapped: verified working against pandas 3.0.5 / numpy 2.5.2 /
+    # matplotlib 3.11.1 on Python 3.13.
     "matplotlib>=3.5.0",
-    "networkx>=2.6.0",
     "numpy>=1.20.0",
     "pandas>=1.3.0",
-    "plotly>=5.0.0",
     "seaborn>=0.11.0",
     "click>=8.0.0",
-    "tqdm>=4.60.0",
-    "ipykernel>=6.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-    "black>=22.0.0",
-    "isort>=5.10.0",
-    "flake8>=4.0.0",
-    "mypy>=0.950",
-    "jupyter>=1.0.0",
-    "ipykernel>=6.0.0",
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-cov>=4.0.0,<7.0.0",
+    "black>=22.0.0,<26.0.0",
+    "isort>=5.10.0,<7.0.0",
+    "flake8>=4.0.0,<8.0.0",
+    "mypy>=0.950,<2.0.0",
+    "jupyter>=1.0.0,<2.0.0",
+    "ipykernel>=6.0.0,<7.0.0",
 ]
 docs = [
-    "mkdocs>=1.4.0",
-    "mkdocs-material>=8.0.0",
-    "mkdocstrings[python]>=0.19.0",
+    "mkdocs>=1.4.0,<2.0.0",
+    "mkdocs-material>=8.0.0,<10.0.0",
+    "mkdocstrings[python]>=0.19.0,<1.0.0",
+]
+# Jupyter kernel for the example notebooks; not needed by the library itself.
+notebooks = [
+    "ipykernel>=6.0.0,<7.0.0",
+    "jupyter>=1.0.0,<2.0.0",
 ]
 
 [project.urls]
@@ -72,7 +91,7 @@ where = ["src"]
 
 [tool.black]
 line-length = 88
-target-version = ['py38']
+target-version = ['py39']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -102,7 +121,7 @@ python_functions = ["test_*"]
 addopts = "--strict-markers --strict-config --cov=ethopy_analysis"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true

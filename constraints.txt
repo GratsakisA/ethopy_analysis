@@ -1,0 +1,80 @@
+# Known-good, fully-resolved runtime environment for ethopy-analysis.
+#
+# pyproject.toml holds the supported *ranges*; this file records one exact
+# resolution of those ranges that has been verified end-to-end against a live
+# EthoPy DataJoint database (Python 3.13, macOS).
+#
+# Use it when you want a reproducible install rather than the newest allowed
+# versions:
+#
+#     pip install -e . -c constraints.txt
+#
+# Regenerate after intentionally upgrading a dependency.
+
+# --- direct runtime dependencies ---
+click==8.2.1
+datajoint==0.14.4
+matplotlib==3.10.3
+numpy==2.2.6
+pandas==2.3.1
+seaborn==0.13.2
+# Must stay <82: setuptools 82 removed pkg_resources, which datajoint imports.
+setuptools==80.9.0
+
+# --- transitive dependencies ---
+appdirs==1.4.4
+argon2-cffi==25.1.0
+argon2-cffi-bindings==21.2.0
+asttokens==3.0.0
+blinker==1.9.0
+certifi==2025.7.14
+cffi==1.17.1
+colorama==0.4.6
+contourpy==1.3.2
+cryptography==45.0.5
+cycler==0.12.1
+decorator==5.2.1
+deepdiff==8.5.0
+executing==2.2.0
+Faker==37.4.0
+Flask==3.1.1
+fonttools==4.58.5
+ipython==9.4.0
+ipython_pygments_lexers==1.1.1
+itsdangerous==2.2.0
+jedi==0.19.2
+Jinja2==3.1.6
+kiwisolver==1.4.8
+MarkupSafe==3.0.2
+matplotlib-inline==0.1.7
+minio==7.2.15
+networkx==3.5
+orderly-set==5.5.0
+otumat==0.3.1
+packaging==25.0
+parso==0.8.4
+pexpect==4.9.0
+pillow==11.3.0
+prompt_toolkit==3.0.51
+ptyprocess==0.7.0
+pure_eval==0.2.3
+pycparser==2.22
+pycryptodome==3.23.0
+pydot==4.0.1
+Pygments==2.19.2
+# Must stay <1.2.0: PyMySQL 1.2.0 attempts TLS opportunistically and cannot
+# connect to servers with legacy TLS (e.g. MySQL 5.7).
+PyMySQL==1.1.1
+pyparsing==3.2.3
+python-dateutil==2.9.0.post0
+pytz==2025.2
+six==1.17.0
+stack-data==0.6.3
+tqdm==4.67.1
+traitlets==5.14.3
+typing_extensions==4.14.1
+tzdata==2025.2
+urllib3==2.5.0
+watchdog==6.0.0
+wcwidth==0.2.13
+Werkzeug==3.1.3

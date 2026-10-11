@@ -1,9 +1,18 @@
 /temp
 _version.py
-
+CLAUDE.md
+.DS_Store
 # avoid commit of any Configuration file
 *.json
+# ...but the credential-free template must stay in the repo: the install docs
+# tell users to copy it to dj_conf.json.
+!dj_conf.template.json
 
+# Generated figures and reports. Scoped to output directories so that
+# committed documentation images (e.g. docs/*.png) are still tracked.
+/output/
+/plots/
+/reports/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

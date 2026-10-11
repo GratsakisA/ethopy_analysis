@@ -152,15 +152,6 @@ def generate_report(animal_id: int, output_dir: str):
 
             f.write("SESSION SUMMARY\n")
             f.write(f"Total sessions: {len(sessions)}\n")
-            if get_performance(animal_id, session_row['session']) is None:
-                f.write(
-                    f"  Performance: no behavior in this session\n"
-                )
-            else:    
-                f.write(
-                    f"  Performance: {get_performance(animal_id, session_row['session']):.3f}\n"
-                )
-
             f.write(
                 f"Session range: {sessions['session'].min()} - {sessions['session'].max()}\n\n"
             )
@@ -169,9 +160,11 @@ def generate_report(animal_id: int, output_dir: str):
             for _, session_row in sessions.iterrows():
                 f.write(f"Session {session_row['session']}:\n")
                 f.write(f"  Trials: {session_row['trials_count']}\n")
-                f.write(
-                    f"  Performance: {get_performance(animal_id, session_row['session']):.3f}\n"
-                )
+                performance = get_performance(animal_id, session_row["session"])
+                if performance is None:
+                    f.write("  Performance: no behavior in this session\n")
+                else:
+                    f.write(f"  Performance: {performance:.3f}\n")
                 f.write(f"  Date: {session_row['session_tmst']}\n\n")
 
         # Generate and save all plots

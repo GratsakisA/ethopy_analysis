@@ -1,0 +1,15 @@
+{
+  "database": {
+    "schemas": {
+      "experiment": "lab_experiments",
+      "stimulus": "lab_stimuli",
+      "behavior": "lab_behavior",
+      "mice": "lab_mice"
+    }
+  },
+  "paths": {
+    "data_dir": "./data",
+    "output_dir": "./output",
+    "config_dir": "./config"
+  }
+}

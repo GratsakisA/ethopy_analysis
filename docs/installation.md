@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.8 or higher
+- Python 3.9 or higher
 - pip package manager
 - Git (for development installation)
 
@@ -56,6 +56,17 @@ Includes:
 - mypy (type checking)
 - jupyter (notebooks)
 
+## Reproducible Installation
+
+`pyproject.toml` declares supported version *ranges*. To install one exact
+combination verified end-to-end against a live EthoPy database:
+
+```bash
+pip install -e . -c constraints.txt
+```
+
+Use this first if you hit a dependency-related failure.
+
 ## Verify Installation
 
 Test that the package is installed correctly:
@@ -71,16 +82,22 @@ python -c "import ethopy_analysis; print('Installation successful')"
 ## Dependencies
 
 ### Core Dependencies
-- **datajoint** (≥0.13.0) - Database connectivity
+- **datajoint** (≥0.14.0, **<2.0.0**) - Database connectivity
+- **setuptools** (**<82**) - Required by datajoint, see note below
+- **pymysql** (**<1.2.0**) - MySQL driver, pulled in by datajoint, see note below
 - **matplotlib** (≥3.5.0) - Plotting
 - **pandas** (≥1.3.0) - Data manipulation
 - **numpy** (≥1.20.0) - Numerical computing
 - **seaborn** (≥0.11.0) - Statistical visualization
-- **plotly** (≥5.0.0) - Interactive plots
-- **opencv-python** (≥4.5.0) - Video analysis
 - **click** (≥8.0.0) - Command-line interface
-- **tqdm** (≥4.60.0) - Progress bars
-- **ipykernel** (≥6.0.0) - Jupyter support
+
+Only the three capped dependencies above have a known, reproducible incompatibility. Everything else is left uncapped on purpose: a speculative upper bound cannot prevent breakage, it only makes the package uninstallable alongside newer dependencies. Verified working against pandas 3.0.5, numpy 2.5.2 and matplotlib 3.11.1. For an exact reproducible environment use `constraints.txt` instead.
+
+!!! note "Why `setuptools<82`?"
+    datajoint runs `import pkg_resources` at import time. It does declare setuptools as a dependency, but left it *unbounded* until 0.14.9, so an unpinned fresh install could resolve to setuptools 82 — the release that actually removed `pkg_resources` — and `import datajoint` then fails with `ModuleNotFoundError: No module named 'pkg_resources'`. setuptools 81 only deprecates it, with a warning. datajoint ≥0.14.9 declares `setuptools<82` itself, so this cap only matters if you resolve to an older datajoint.
+
+!!! note "Why `pymysql<1.2.0`?"
+    PyMySQL 1.2.0 attempts TLS opportunistically, so connecting to a server with legacy TLS (MySQL 5.7, for example) fails with `SSLV3_ALERT_HANDSHAKE_FAILURE`. It cannot be worked around from configuration: datajoint's `use_tls=False` only omits the `ssl` argument and never passes PyMySQL's `ssl_disabled=True`, which is the only setting that connects. The cap can be dropped once datajoint passes `ssl_disabled`, or once every server you connect to supports modern TLS.
 
 ## Database Setup
 

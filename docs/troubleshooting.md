@@ -4,6 +4,46 @@ Common issues and solutions for the Ethopy Analysis package.
 
 ## Installation Issues
 
+### `ModuleNotFoundError: No module named 'pkg_resources'`
+
+**Problem**: Any import fails with a traceback ending in `datajoint/plugin.py: import pkg_resources`:
+
+```
+File ".../datajoint/plugin.py", line 4, in <module>
+    import pkg_resources
+ModuleNotFoundError: No module named 'pkg_resources'
+```
+
+**Cause**: datajoint imports `pkg_resources` at import time. It declares setuptools as a dependency, but left it *unbounded* until 0.14.9, so an environment that resolved to setuptools 82 — the release that removed `pkg_resources` — cannot import datajoint at all. setuptools 81 only deprecates it and still works, emitting a warning.
+
+**Solution**: the package now pins `setuptools<82`. Reinstall to pick it up:
+
+```bash
+pip install -e .
+
+# Or downgrade setuptools directly in an existing environment
+pip install "setuptools<82"
+```
+
+### `SSLV3_ALERT_HANDSHAKE_FAILURE` when connecting
+
+**Problem**: the connection fails before authentication, with:
+
+```
+pymysql.err.OperationalError: (2003, "Can't connect to MySQL server on
+'127.0.0.1' ([SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake
+failure)")
+```
+
+**Cause**: PyMySQL 1.2.0 attempts TLS opportunistically. Servers with legacy TLS — MySQL 5.7 in particular — are rejected by modern OpenSSL. Setting `use_tls` to `false` does *not* help: datajoint only omits the `ssl` argument and never passes PyMySQL's `ssl_disabled=True`, which is the only setting that connects.
+
+**Solution**: the package pins `pymysql<1.2.0`. In an environment that already
+resolved to 1.2.0:
+
+```bash
+pip install "pymysql<1.2.0"
+```
+
 ### Package Not Found After Installation
 
 **Problem**: `ethopy-analysis` command not found or import errors

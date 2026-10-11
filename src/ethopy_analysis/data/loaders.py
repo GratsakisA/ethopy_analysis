@@ -5,7 +5,7 @@ This module provides user-friendly functions to load behavioral data
 and return it as pandas DataFrames or DataJoint expressions ready for analysis and visualization.
 """
 
-from typing import List, Optional, Union, Tuple, Any, Dict
+from typing import List, Optional, Union, Any, Dict
 import pandas as pd
 import numpy as np
 import os
@@ -210,33 +210,47 @@ def get_trial_stimulus(
         Union[pd.DataFrame, Any]: Trial behavior conditions DataFrame if format="df",
                                  DataJoint expression if format="dj"
     Raises:
-        Exception: If the specified stimulus class table is not found in the stimulus schema
+        Exception: If an explicitly requested stimulus class table is not found in
+            the stimulus schema
 
     Note:
         This function combines trial data with stimulus conditions and all related
         child tables that contain data for the session.
+
+        Sessions run with EthoPy's base ``Stimulus`` class have no dedicated
+        condition table - their conditions live directly on ``StimCondition``.
+        Those sessions fall back to ``StimCondition`` instead of raising.
     """
     stimulus = get_schema("stimulus")
     combined_df = get_session_classes(animal_id, session)
     key_animal_session = {"animal_id": animal_id, "session": session}
 
+    is_base_stimulus = False
     if stim_class is None:
         stim_class_name = combined_df["stimulus_class"].values[0]
-        if stim_class_name == 'PandaShowBase':
-            stim_class_name = 'Panda'
-        try:
-            stim_conds = getattr(stimulus, stim_class_name)
-        except AttributeError as e:
-            raise Exception(
-                f"Cannot find {stim_class_name} table in stimulus schema"
-            ) from e
+        if "Panda" in stim_class_name:
+            stim_class_name = "Panda"
+        # The base Stimulus class stores no extra conditions, so there is no
+        # `Stimulus` table - StimCondition alone carries the trial conditions.
+        if stim_class_name == "Stimulus":
+            stim_conds = stimulus.StimCondition
+            is_base_stimulus = True
+        else:
+            try:
+                stim_conds = getattr(stimulus, stim_class_name)
+            except AttributeError as e:
+                raise Exception(
+                    f"Cannot find {stim_class_name} table in stimulus schema"
+                ) from e
     else:
         try:
             stim_conds = getattr(stimulus, stim_class)
         except AttributeError as e:
             raise Exception(f"Cannot find {stim_class} table in stimulus schema") from e
 
-    children = stim_conds.children(as_objects=True)
+    # StimCondition's children are every stimulus-type table in the schema, so
+    # expanding them would join unrelated stimuli onto the base-class result.
+    children = [] if is_base_stimulus else stim_conds.children(as_objects=True)
     base_dj = (stimulus.StimCondition.Trial & key_animal_session) * stim_conds
     all_stims = base_dj
 
@@ -371,9 +385,7 @@ def get_session_duration(animal_id: int, session: int) -> Optional[str]:
     return convert_ms_to_time(state_times[-1])["formatted"]
 
 
-def get_session_task(
-    animal_id: int, session: int, save_file: bool = True
-) -> Tuple[str, str]:
+def get_session_task(animal_id: int, session: int, save_file: bool = True) -> str:
     """
     Retrieve and optionally save the task configuration file for a specific session.
 
@@ -383,16 +395,20 @@ def get_session_task(
         save_file (bool, optional): Whether to save the file to disk. Defaults to True.
 
     Returns:
-        Tuple[str, str]: A tuple containing (filename, git_hash)
+        str: The task filename.
 
     Note:
         If save_file is True, the file is saved with a modified name including
         animal_id and session for uniqueness.
+
+        Code version information is not part of this table. Use
+        :func:`get_session_version` for the git hash or package version that
+        produced the session.
     """
     key_animal_session = {"animal_id": animal_id, "session": session}
     experiment = get_schema("experiment")
-    file, git_hash, task_name = (experiment.Session.Task & key_animal_session).fetch1(
-        "task_file", "git_hash", "task_name"
+    file, task_name = (experiment.Session.Task & key_animal_session).fetch1(
+        "task_file", "task_name"
     )
     filename = task_name.split("/")[-1]
 
@@ -400,7 +416,45 @@ def get_session_task(
         filename = f"{filename[:-3]}_animal_id_{animal_id}_session_{session}.py"
         print(f"Save task at path: {os.getcwd()}/{filename}")
         file.tofile(filename)
-    return filename, git_hash
+    return filename
+
+
+def get_session_version(
+    animal_id: int, session: int, format: str = "df"
+) -> Union[pd.DataFrame, Any]:
+    """
+    Retrieve the code version records for a session.
+
+    EthoPy writes one row per project directory to ``experiment.Session.Version``
+    - typically the EthoPy package and the plugins directory - recording the git
+    hash or the installed package version that produced the session.
+
+    Args:
+        animal_id (int): The animal identifier
+        session (int): The session number
+        format (str, optional): Return format, either "df" for DataFrame or "dj" for DataJoint expression.
+                               Defaults to "df".
+
+    Returns:
+        Union[pd.DataFrame, Any]: Version records DataFrame if format="df",
+                                 DataJoint expression if format="dj". The
+                                 DataFrame is empty when the session has no
+                                 version records.
+
+    Note:
+        Columns are ``project_path``, ``source_type`` ("git", "pypi" or "None"),
+        ``version`` (git hash or package version), ``repository_url`` and
+        ``is_dirty`` (uncommitted changes present at run time).
+
+        Not every session has version records: sessions predating the table, or
+        runs where EthoPy could not resolve a project, have none.
+    """
+    key = {"animal_id": animal_id, "session": session}
+    experiment = get_schema("experiment")
+    version_dj = experiment.Session.Version & key
+    if format == "dj":
+        return version_dj
+    return version_dj.fetch(format="frame").reset_index()
 
 
 def get_state_windows(
@@ -988,3 +1042,45 @@ def get_session_proximity_data(
         )
 
     return pd.DataFrame(rows)
+
+
+def get_mouse_weight(
+    animal_id: int, from_date: str = "", to_date: str = "", format: str = "df"
+) -> Union[pd.DataFrame, Any]:
+    """
+    Get the weight measurements of an animal, sorted by timestamp.
+
+    Requires the optional 'mice' schema to be configured and available.
+
+    Args:
+        animal_id (int): The animal identifier
+        from_date (str, optional): Start date in format 'YYYY-MM-DD'. Defaults to ''.
+        to_date (str, optional): End date in format 'YYYY-MM-DD'. Defaults to ''.
+        format (str, optional): if format equals 'dj' return datajoint expression.
+
+    Returns:
+        Union[pd.DataFrame, Any]: DataFrame with columns 'animal_id', 'timestamp'
+            and 'weight' sorted by timestamp if format="df", MouseWeight
+            expression if format="dj"
+
+    Raises:
+        ValueError: If the 'mice' schema is not available.
+    """
+    mice = get_schema("mice")
+    if mice is None:
+        raise ValueError(
+            "The 'mice' schema is not available. Add it to the 'schemas' section "
+            "of your configuration file, e.g. \"mice\": \"lab_mice\"."
+        )
+
+    weight_dj = mice.MouseWeight & {"animal_id": animal_id}
+    if from_date != "":
+        weight_dj = weight_dj & f'timestamp > "{from_date}"'
+    if to_date != "":
+        weight_dj = weight_dj & f'timestamp < "{to_date}"'
+
+    if format == "dj":
+        return weight_dj
+
+    weight_df = weight_dj.fetch(format="frame").reset_index()
+    return weight_df.sort_values("timestamp").reset_index(drop=True)

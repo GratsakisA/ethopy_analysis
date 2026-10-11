@@ -591,6 +591,13 @@ def group_column_times(
             )
 
     logger.debug(f"Processed {len(results)} period/column combinations")
+
+    if not results:
+        # pd.DataFrame([]) has no columns at all, so a caller indexing e.g.
+        # ["port"] gets a KeyError rather than an empty result. Return the
+        # documented columns so "no events" behaves like an empty frame.
+        return pd.DataFrame(columns=["id", column, "event_count", "timings"])
+
     return pd.DataFrame(results)
 
 
@@ -675,9 +682,25 @@ def plot_licks_state(
     """
     # gets start_time and stop_time for each state
     states_df = get_state_times(animal_id, session)
+    available_states = sorted(states_df["state"].unique())
+
     # select only trials that are reward
     select_trials_df = select_trials(states_df, state_select)
+    if select_trials_df.empty:
+        print(
+            f"No trials with state '{state_select}' for animal {animal_id}, "
+            f"session {session}. Available states: {available_states}"
+        )
+        return
+
     select_state_df = select_trials_df.loc[select_trials_df["state"] == check_state]
+    if select_state_df.empty:
+        print(
+            f"No '{check_state}' state within '{state_select}' trials for animal "
+            f"{animal_id}, session {session}. Available states: {available_states}"
+        )
+        return
+
     licks_df = get_trial_licks(animal_id, session)
     licks_port = group_column_times(
         licks_df,
@@ -686,6 +709,12 @@ def plot_licks_state(
         time_id=select_state_df["trial_idx"].values,
         column="port",
     )
+    if licks_port.empty:
+        print(
+            f"No licks recorded during '{check_state}' in '{state_select}' trials "
+            f"for animal {animal_id}, session {session}."
+        )
+        return
 
     uniq_ports = licks_port["port"].unique()
 
