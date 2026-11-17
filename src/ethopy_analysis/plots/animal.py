@@ -232,7 +232,6 @@ def _draw_session_lines(
     series: Dict[str, List[Optional[float]]],
     title: str,
     ylabel: str,
-    line_color: Optional[str] = None,
 ):
     """Draw background bands per task and one line per series on ax.
 
@@ -258,8 +257,12 @@ def _draw_session_lines(
     line_handles = []
     for label, values in series.items():
         values = [np.nan if v is None else v for v in values]
-        color = line_color or _series_color(label)
-        (line,) = ax.plot(x, values, marker=11, color=color, label=label)
+        color = _series_color(label)
+        # dashed for lines including repeated trials, solid otherwise
+        linestyle = "--" if "incl. repeats" in label else "-"
+        (line,) = ax.plot(
+            x, values, marker=11, color=color, linestyle=linestyle, label=label
+        )
         line_handles.append(line)
 
     ax.set_axisbelow(True)  # keep the grid under the semi-transparent bands
@@ -392,80 +395,89 @@ def plot_session_no_repeat_performance(
     save_path: Optional[str] = None,
     repeat_line: bool = False,
     difficulty=None,
-) -> List[float]:
-    """Plot session performance excluding repeated trials.
+) -> Dict[str, List[float]]:
+    """Plot session performance excluding repeated trials, per difficulty.
 
-    Creates a solid line of performance across sessions, where performance is computed
-    by perf_func with repeated trials removed. Sessions where perf_func returns None
-    (e.g. no trials at the selected difficulty) are not plotted.
-
-    If repeat_line is True, a dashed line with performance including repeated trials
-    is added to the same plot, one per difficulty. For a single difficulty, the dashed
-    line has the same color as the solid line.
+    Each difficulty gets a color. Its no-repeat line is solid, and with repeat_line=True
+    its line including repeated trials is dashed, in the same color. Sessions where no
+    selected line has a value are left out of the plot.
 
     Args:
         animal_id: The animal identifier to analyze.
         sessions: List of session IDs to include in the analysis.
-        perf_func: Function that calculates no-repeat performance for a given animal_id and session.
-            Should have signature: perf_func(animal_id: int, session: int) -> Optional[float]
+        perf_func: Function that calculates no-repeat performance for a given animal_id,
+            session and difficulty. Should have signature:
+            perf_func(animal_id: int, session: int, difficulty=None) -> Optional[float]
+            (get_no_repeat_performance has this signature).
         save_path: Path to save the plot image. If None, plot is not saved.
-        repeat_line: If True, also plot performance including repeated trials as a
-            dashed line in the same plot.
-        difficulty: Lines used for the repeated-trials line: None or "None" for one
-            total line, "All" for one line per difficulty, or a list (e.g. [2] or [1, 2]).
+        repeat_line: If True, also draw the performance including repeated trials as a
+            dashed line for each difficulty.
+        difficulty: A list of difficulties (e.g. [2] or [1, 2]), or None for one
+            "total" line over all trials. Difficulties without data are printed and
+            not plotted.
 
     Returns:
-        List of performance values for each session, in the same order as input sessions.
+        Dict mapping each line label to its performance values, in the same order as
+        input sessions.
     """
-    perfs = [perf_func(animal_id, sess) for sess in sessions]
+    print(
+        "Available difficulties: "
+        + (
+            ", ".join(str(d) for d in get_difficulties(animal_id, sessions))
+            or "none"
+        )
+    )
 
-    # Plot only sessions with a value (e.g. the selected difficulty)
-    plotted = [(sess, perf) for sess, perf in zip(sessions, perfs) if perf is not None]
-    if len(plotted) == 0:
-        print("No session available")
-        return perfs
-    plot_sessions = [sess for sess, _ in plotted]
-    plot_perfs = [perf for _, perf in plotted]
-    prtcls = _get_task_names(animal_id, plot_sessions)
-    x = list(range(1, len(plot_sessions) + 1))
+    if difficulty is None:
+        wanted = [None]
+    else:
+        available = get_difficulties(animal_id, sessions)
+        wanted = []
+        for d in difficulty:
+            if d in available:
+                wanted.append(d)
+            else:
+                print(f"No data for difficulty {d}, not plotted")
+        if not wanted:
+            print("No difficulties with data, nothing plotted")
+            return {}
 
-    # The solid line takes the color of its difficulty when one difficulty is given
-    single_difficulty = isinstance(difficulty, (list, tuple)) and len(difficulty) == 1
-    no_repeat_color = _series_color(f"difficulty {difficulty[0]}") if single_difficulty else "black"
+    prtcls = _get_task_names(animal_id, sessions)
+
+    # Solid no-repeat line and dashed repeat line per difficulty, in legend order
+    series = {}
+    for d in wanted:
+        series[f"{_difficulty_label(d)} (no repeats)"] = [
+            perf_func(animal_id, sess, difficulty=d) for sess in sessions
+        ]
+        if repeat_line:
+            series[f"{_difficulty_label(d)} (incl. repeats)"] = [
+                get_performance(animal_id, sess, difficulty=d) for sess in sessions
+            ]
+
+    plot_sessions, plot_prtcls, plot_series = _keep_sessions_with_values(
+        sessions, prtcls, series
+    )
+    if len(plot_sessions) == 0:
+        print("No session with the selected difficulty")
+        return series
 
     title = "Including repeated trials" if repeat_line else "No repeated trials"
     fig, ax = plt.subplots(figsize=(20, 5))
     task_handles, line_handles = _draw_session_lines(
         ax,
         plot_sessions,
-        prtcls,
-        {"no repeated trials": plot_perfs},
+        plot_prtcls,
+        plot_series,
         f"{title} | Animal_id: {animal_id}",
         "Performance",
-        line_color=no_repeat_color,
     )
-
-    if repeat_line:
-        available = get_difficulties(animal_id, plot_sessions)
-        resolved = _resolve_difficulties(difficulty, available)
-        for d in resolved:
-            label = f"{_difficulty_label(d)} incl. repeats"
-            values = [
-                get_performance(animal_id, sess, difficulty=d) for sess in plot_sessions
-            ]
-            values = [np.nan if v is None else v for v in values]
-            color = no_repeat_color if single_difficulty else _series_color(_difficulty_label(d))
-            (line,) = ax.plot(
-                x, values, linestyle="--", marker=11, color=color, label=label
-            )
-            line_handles.append(line)
-
     _add_legends(fig, task_handles, line_handles)
 
     if save_path:
         save_plot(fig, save_path)
 
-    return perfs
+    return series
 
 
 def plot_trial_per_session(
