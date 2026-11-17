@@ -32,6 +32,7 @@ from .loaders import (
 # Analysis functions
 from .analysis import (
     get_performance,
+    get_no_repeat_performance,
     session_summary,
     trials_per_session,
     get_port_exit_to_lick_latency,
@@ -74,6 +75,7 @@ __all__ = [
     "get_session_proximity_data",
     # Analysis functions
     "get_performance",
+    "get_no_repeat_performance",
     "session_summary",
     "trials_per_session",
     "get_port_exit_to_lick_latency",

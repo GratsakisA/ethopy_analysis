@@ -72,6 +72,86 @@ def get_performance(
     return count_reward_trials / total_decisive
 
 
+def get_no_repeat_performance(
+    animal_id, session, difficulty: Optional[int] = None
+) -> Optional[float]:
+    """
+    Calculate performance excluding repeated trials.
+
+    Repeated trials are removed as follows:
+        - Only the first Punish of each consecutive Punish sequence is kept.
+        - A Reward immediately following a repeated Punish is dropped.
+
+    Args:
+        animal_id (int): Animal identifier
+        session (int): Session identifier
+        difficulty (Optional[int], optional): Only use trials at this difficulty.
+                                              Defaults to None (all difficulties).
+
+    Returns:
+        Optional[float]: Performance ratio (0-1), or None if no decisive trials found
+
+    Note:
+        Decisive trials are those with state 'Reward' or 'Punish'. Trials are
+        ordered by trial_idx before the repeat logic is applied.
+        Performance is calculated as: n_reward / (n_reward + n_punish) on the kept trials.
+    """
+    from .loaders import get_trial_states
+
+    df = get_trial_states(animal_id, session)
+    if df is None or df.empty:
+        print("Warning: DataFrame is empty or None - cannot calculate performance")
+        return None
+
+    # Filter by difficulty if provided
+    if difficulty is not None:
+        experiment = get_schema("experiment")
+        difficulty_trials = (
+            experiment.Condition.MatchPort()
+            * experiment.Trial()
+            & f"difficulty={difficulty}"
+            & {"animal_id": animal_id, "session": session}
+        ).fetch("trial_idx")
+        df = df[df["trial_idx"].isin(difficulty_trials)]
+        if df.empty:
+            print(
+                f"Warning: No trials found at difficulty {difficulty} - cannot calculate performance"
+            )
+            return None
+
+    # Keep only decisive trials, in chronological order
+    decisive_trials = df[df["state"].isin(["Reward", "Punish"])]
+    if decisive_trials.empty:
+        print("Warning: No Reward or Punish states found - cannot calculate performance")
+        return None
+    decisive_trials = decisive_trials.sort_values("trial_idx").reset_index(drop=True)
+
+    is_reward = decisive_trials["state"] == "Reward"
+    is_punish = decisive_trials["state"] == "Punish"
+
+    # First Punish of each consecutive Punish sequence
+    first_punish = is_punish & ~is_punish.shift(1, fill_value=False)
+
+    # Punish trials that repeat the previous Punish
+    repeated_punish = is_punish & is_punish.shift(1, fill_value=False)
+
+    # Reward immediately following a repeated Punish
+    reward_after_repeated_punish = is_reward & repeated_punish.shift(1, fill_value=False)
+
+    keep = (is_reward & ~reward_after_repeated_punish) | first_punish
+    kept = decisive_trials[keep]
+
+    count_reward_trials = (kept["state"] == "Reward").sum()
+    count_punish_trials = (kept["state"] == "Punish").sum()
+
+    total_decisive = count_reward_trials + count_punish_trials
+    if total_decisive == 0:
+        print("Warning: Total decisive trials is zero - cannot calculate performance")
+        return None
+
+    return count_reward_trials / total_decisive
+
+
 def session_summary(animal_id: int, session: int) -> None:
     """
     Print a comprehensive summary of a session including metadata and performance.

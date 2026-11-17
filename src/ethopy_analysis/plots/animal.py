@@ -235,6 +235,45 @@ def plot_session_performance(
     return perfs
 
 
+def plot_session_no_repeat_performance(
+    animal_id: int,
+    sessions: List[int],
+    perf_func: callable,
+    save_path: Optional[str] = None,
+) -> List[float]:
+    """Plot session performance excluding repeated trials.
+
+    Creates a line plot of performance across sessions, where performance is
+    computed by perf_func with repeated trials removed.
+
+    Args:
+        animal_id: The animal identifier to analyze.
+        sessions: List of session IDs to include in the analysis.
+        perf_func: Function that calculates no-repeat performance for a given animal_id and session.
+            Should have signature: perf_func(animal_id: int, session: int) -> Optional[float]
+        save_path: Path to save the plot image. If None, plot is not saved.
+
+    Returns:
+        List of performance values for each session, in the same order as input sessions.
+    """
+    perfs = [perf_func(animal_id, sess) for sess in sessions]
+
+    plt.figure(figsize=(20, 5))
+    plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
+    plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
+    plt.xlim(0, len(perfs) + 1)
+    plt.ylim(0, 1)
+    plt.title(f"No repeated trials | Animal_id: {animal_id}")
+    plt.xlabel("Session _ids")
+    plt.ylabel("Performance")
+    plt.grid()
+
+    if save_path:
+        save_plot(plt.gcf(), save_path)
+
+    return perfs
+
+
 def plot_trial_per_session(
     animal_id: int, min_trials: int = 2, save_path: Optional[str] = None
 ) -> None:
