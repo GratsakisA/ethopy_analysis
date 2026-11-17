@@ -11,7 +11,7 @@ import pandas as pd
 from ethopy_analysis.data.loaders import get_sessions
 from ethopy_analysis.data.analysis import get_performance, trials_per_session
 from ethopy_analysis.db.schemas import get_schema
-from ethopy_analysis.plots.utils import save_plot
+from ethopy_analysis.plots.utils import get_task_color, save_plot
 
 
 def plot_session_date(
@@ -214,12 +214,11 @@ def plot_session_performance(
     plt.figure(figsize=(20, 5))
     plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
     plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
-    color = plt.cm.Pastel1(np.linspace(0, 1, len(color_layer)))
     for i in range(0, len(color_layer) - 1):
         plt.axvspan(
             color_layer[i] + 0.5,
             color_layer[i + 1] + 0.5,
-            facecolor=color[i],
+            facecolor=get_task_color(protocols[i]),
             label=protocols[i],
         )
     plt.xlim(0, len(perfs) + 1)
@@ -244,7 +243,8 @@ def plot_session_no_repeat_performance(
     """Plot session performance excluding repeated trials.
 
     Creates a line plot of performance across sessions, where performance is
-    computed by perf_func with repeated trials removed.
+    computed by perf_func with repeated trials removed. Sessions where perf_func
+    returns None (e.g. no trials at the selected difficulty) are not plotted.
 
     Args:
         animal_id: The animal identifier to analyze.
@@ -256,35 +256,41 @@ def plot_session_no_repeat_performance(
     Returns:
         List of performance values for each session, in the same order as input sessions.
     """
+    perfs = [perf_func(animal_id, sess) for sess in sessions]
+
+    # Plot only sessions with a value (e.g. the selected difficulty)
+    plotted = [(sess, perf) for sess, perf in zip(sessions, perfs) if perf is not None]
+    if len(plotted) == 0:
+        print("No session available")
+        return perfs
+    plot_sessions = [sess for sess, _ in plotted]
+    plot_perfs = [perf for _, perf in plotted]
+
     experiment = get_schema("experiment")
     task_rows = (
         experiment.Session.Task()
-        & [f"session={session}" for session in sessions]
+        & [f"session={session}" for session in plot_sessions]
         & f"animal_id={animal_id}"
     ).fetch(as_dict=True)
     task_by_session = {
         row["session"]: row["task_name"].split("/")[-1] for row in task_rows
     }
-    prtcls = [task_by_session.get(sess, "unknown") for sess in sessions]
-
-    perfs = [perf_func(animal_id, sess) for sess in sessions]
+    prtcls = [task_by_session.get(sess, "unknown") for sess in plot_sessions]
 
     protocols, starts = find_uniq_pos(prtcls)
-    bounds = starts + [len(perfs)]
-    color = plt.cm.Pastel1(np.linspace(0, 1, len(protocols)))
+    bounds = starts + [len(plot_perfs)]
 
     plt.figure(figsize=(20, 5))
-    plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
-    plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
+    plt.plot(range(1, len(plot_perfs) + 1, 1), plot_perfs, marker=11)
+    plt.xticks(range(1, len(plot_perfs) + 1, 1), plot_sessions, rotation=45)
     for i in range(len(protocols)):
         plt.axvspan(
             bounds[i] + 0.5,
             bounds[i + 1] + 0.5,
-            facecolor=color[i],
+            facecolor=get_task_color(protocols[i]),
             label=protocols[i],
         )
-    plt.xlim(0, len(perfs) + 1)
-    plt.ylim(0, 1)
+    plt.xlim(0, len(plot_perfs) + 1)
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.title(f"No repeated trials | Animal_id: {animal_id}")
     plt.xlabel("Session _ids")

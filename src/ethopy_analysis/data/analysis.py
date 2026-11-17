@@ -73,7 +73,7 @@ def get_performance(
 
 
 def get_no_repeat_performance(
-    animal_id, session, difficulty: Optional[int] = None
+    animal_id, session, difficulty: Optional[Union[int, List[int]]] = None
 ) -> Optional[float]:
     """
     Calculate performance excluding repeated trials.
@@ -85,7 +85,9 @@ def get_no_repeat_performance(
     Args:
         animal_id (int): Animal identifier
         session (int): Session identifier
-        difficulty (Optional[int], optional): Only use trials at this difficulty.
+        difficulty (Optional[Union[int, List[int]]], optional): Only use trials at
+                                              this difficulty, or at any of these
+                                              difficulties if a list is given.
                                               Defaults to None (all difficulties).
 
     Returns:
@@ -105,11 +107,14 @@ def get_no_repeat_performance(
 
     # Filter by difficulty if provided
     if difficulty is not None:
+        difficulties = (
+            [difficulty] if isinstance(difficulty, (int, np.integer)) else list(difficulty)
+        )
         experiment = get_schema("experiment")
         difficulty_trials = (
             experiment.Condition.MatchPort()
             * experiment.Trial()
-            & f"difficulty={difficulty}"
+            & f"difficulty in ({', '.join(str(d) for d in difficulties)})"
             & {"animal_id": animal_id, "session": session}
         ).fetch("trial_idx")
         df = df[df["trial_idx"].isin(difficulty_trials)]

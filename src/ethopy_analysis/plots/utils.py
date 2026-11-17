@@ -6,9 +6,27 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import logging
+import zlib
 from typing import Dict, Optional, List, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def get_task_color(task_name: str):
+    """Return the color for a task name.
+
+    The color depends only on the name, so the same task gets the same color
+    in every plot. Two different tasks can still share a color, since the
+    palette has a fixed number of colors.
+
+    Args:
+        task_name: Name of the task.
+
+    Returns:
+        An RGBA tuple from the Pastel1 palette.
+    """
+    palette = plt.cm.Pastel1.colors
+    return palette[zlib.crc32(task_name.encode("utf-8")) % len(palette)]
 
 
 
