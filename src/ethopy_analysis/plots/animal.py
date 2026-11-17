@@ -212,6 +212,19 @@ def _difficulty_label(difficulty) -> str:
     return "total" if difficulty is None else f"difficulty {difficulty}"
 
 
+def _series_color(label: str):
+    """Return the line color for a series label.
+
+    "difficulty N" lines get a color from N, so the same difficulty has the same
+    color in every plot. Other lines (e.g. "total", "no repeated trials") are black.
+    """
+    if label.startswith("difficulty "):
+        palette = plt.cm.tab10.colors
+        difficulty = int(label.split()[1])
+        return palette[difficulty % len(palette)]
+    return "black"
+
+
 def _draw_session_lines(
     ax,
     plot_sessions: List[int],
@@ -242,11 +255,10 @@ def _draw_session_lines(
         )
         task_handles.append(band)
 
-    line_colors = plt.cm.tab10.colors
     line_handles = []
-    for j, (label, values) in enumerate(series.items()):
+    for label, values in series.items():
         values = [np.nan if v is None else v for v in values]
-        color = line_color or line_colors[j % len(line_colors)]
+        color = line_color or _series_color(label)
         (line,) = ax.plot(x, values, marker=11, color=color, label=label)
         line_handles.append(line)
 
@@ -378,14 +390,18 @@ def plot_session_no_repeat_performance(
     sessions: List[int],
     perf_func: callable,
     save_path: Optional[str] = None,
-    plot_repeat: bool = False,
+    repeat_line: bool = False,
     difficulty=None,
 ) -> List[float]:
     """Plot session performance excluding repeated trials.
 
-    Creates a line plot of performance across sessions, where performance is
-    computed by perf_func with repeated trials removed. Sessions where perf_func
-    returns None (e.g. no trials at the selected difficulty) are not plotted.
+    Creates a solid line of performance across sessions, where performance is computed
+    by perf_func with repeated trials removed. Sessions where perf_func returns None
+    (e.g. no trials at the selected difficulty) are not plotted.
+
+    If repeat_line is True, a dashed line with performance including repeated trials
+    is added to the same plot, one per difficulty. For a single difficulty, the dashed
+    line has the same color as the solid line.
 
     Args:
         animal_id: The animal identifier to analyze.
@@ -393,10 +409,9 @@ def plot_session_no_repeat_performance(
         perf_func: Function that calculates no-repeat performance for a given animal_id and session.
             Should have signature: perf_func(animal_id: int, session: int) -> Optional[float]
         save_path: Path to save the plot image. If None, plot is not saved.
-        plot_repeat: If True, also plot performance including repeated trials in a
-            second panel, side by side with the same y-axis. Both panels share one set
-            of legends.
-        difficulty: Lines used for the repeated-trials panel: None or "None" for one
+        repeat_line: If True, also plot performance including repeated trials as a
+            dashed line in the same plot.
+        difficulty: Lines used for the repeated-trials line: None or "None" for one
             total line, "All" for one line per difficulty, or a list (e.g. [2] or [1, 2]).
 
     Returns:
@@ -412,46 +427,38 @@ def plot_session_no_repeat_performance(
     plot_sessions = [sess for sess, _ in plotted]
     plot_perfs = [perf for _, perf in plotted]
     prtcls = _get_task_names(animal_id, plot_sessions)
+    x = list(range(1, len(plot_sessions) + 1))
 
-    no_repeat_series = {"no repeated trials": plot_perfs}
-    if not plot_repeat:
-        fig, ax = plt.subplots(figsize=(20, 5))
-        task_handles, line_handles = _draw_session_lines(
-            ax,
-            plot_sessions,
-            prtcls,
-            no_repeat_series,
-            f"No repeated trials | Animal_id: {animal_id}",
-            "Performance",
-            line_color="black",
-        )
-    else:
-        fig, (ax_no_repeat, ax_repeat) = plt.subplots(1, 2, figsize=(20, 5), sharey=True)
-        task_handles, line_handles = _draw_session_lines(
-            ax_no_repeat,
-            plot_sessions,
-            prtcls,
-            no_repeat_series,
-            "No repeated trials",
-            "Performance",
-            line_color="black",
-        )
+    # The solid line takes the color of its difficulty when one difficulty is given
+    single_difficulty = isinstance(difficulty, (list, tuple)) and len(difficulty) == 1
+    no_repeat_color = _series_color(f"difficulty {difficulty[0]}") if single_difficulty else "black"
+
+    title = "Including repeated trials" if repeat_line else "No repeated trials"
+    fig, ax = plt.subplots(figsize=(20, 5))
+    task_handles, line_handles = _draw_session_lines(
+        ax,
+        plot_sessions,
+        prtcls,
+        {"no repeated trials": plot_perfs},
+        f"{title} | Animal_id: {animal_id}",
+        "Performance",
+        line_color=no_repeat_color,
+    )
+
+    if repeat_line:
         available = get_difficulties(animal_id, plot_sessions)
-        repeat_series = {}
-        for d in _resolve_difficulties(difficulty, available):
-            repeat_series[_difficulty_label(d)] = [
+        resolved = _resolve_difficulties(difficulty, available)
+        for d in resolved:
+            label = f"{_difficulty_label(d)} incl. repeats"
+            values = [
                 get_performance(animal_id, sess, difficulty=d) for sess in plot_sessions
             ]
-        _, repeat_line_handles = _draw_session_lines(
-            ax_repeat,
-            plot_sessions,
-            prtcls,
-            repeat_series,
-            "Including repeated trials",
-            "Performance",
-        )
-        line_handles = line_handles + repeat_line_handles
-        fig.suptitle(f"Animal_id: {animal_id}")
+            values = [np.nan if v is None else v for v in values]
+            color = no_repeat_color if single_difficulty else _series_color(_difficulty_label(d))
+            (line,) = ax.plot(
+                x, values, linestyle="--", marker=11, color=color, label=label
+            )
+            line_handles.append(line)
 
     _add_legends(fig, task_handles, line_handles)
 
