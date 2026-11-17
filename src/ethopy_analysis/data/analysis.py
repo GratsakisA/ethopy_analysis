@@ -13,8 +13,54 @@ import numpy as np
 from ethopy_analysis.db.schemas import get_schema
 
 
+def get_trial_ids_at_difficulty(animal_id, session, difficulty) -> List[int]:
+    """Return the trial indices of one session at the given difficulty or difficulties.
+
+    Args:
+        animal_id (int): Animal identifier
+        session (int): Session identifier
+        difficulty (int or list of int): One difficulty, e.g. 1, or several, e.g. [1, 2]
+
+    Returns:
+        List[int]: Trial indices whose difficulty is in the given value(s)
+    """
+    values = (
+        [difficulty] if isinstance(difficulty, (int, np.integer)) else list(difficulty)
+    )
+    experiment = get_schema("experiment")
+    return (
+        experiment.Condition.MatchPort()
+        * experiment.Trial()
+        & f"difficulty in ({', '.join(str(d) for d in values)})"
+        & {"animal_id": animal_id, "session": session}
+    ).fetch("trial_idx")
+
+
+def get_difficulties(animal_id, sessions: List[int]) -> List[int]:
+    """Return the sorted difficulty levels that exist in the given sessions.
+
+    Args:
+        animal_id (int): Animal identifier
+        sessions (List[int]): Session identifiers
+
+    Returns:
+        List[int]: Sorted unique difficulty levels, empty if none are found
+    """
+    experiment = get_schema("experiment")
+    values = (
+        experiment.Condition.MatchPort()
+        * experiment.Trial()
+        & {"animal_id": animal_id}
+        & [f"session={session}" for session in sessions]
+    ).fetch("difficulty")
+    return sorted({int(d) for d in values})
+
+
 def get_performance(
-    animal_id, session, trials: Optional[List[int]] = None
+    animal_id,
+    session,
+    trials: Optional[List[int]] = None,
+    difficulty: Optional[Union[int, List[int]]] = None,
 ) -> Optional[float]:
     """
     Calculate performance as the ratio of reward trials to total decisive trials.
@@ -24,6 +70,9 @@ def get_performance(
         session (int): Session identifier
         trials (Optional[List[int]], optional): List of trial indices to filter by.
                                               Defaults to None.
+        difficulty (Optional[Union[int, List[int]]], optional): Only use trials at this
+                                              difficulty, or at any of these difficulties
+                                              if a list is given. Defaults to None (all).
 
     Returns:
         Optional[float]: Performance ratio (0-1), or None if no decisive trials found
@@ -33,11 +82,17 @@ def get_performance(
         Performance is calculated as: count_reward_trials / (count_reward_trials + count_punish_trials)
     """
     from .loaders import get_trial_states
-    
+
     df = get_trial_states(animal_id, session)
     if df is None or df.empty:
         print("Warning: DataFrame is empty or None - cannot calculate performance")
         return None
+
+    # Filter by difficulty if provided
+    if difficulty is not None:
+        df = df[df["trial_idx"].isin(get_trial_ids_at_difficulty(animal_id, session, difficulty))]
+        if df.empty:
+            return None
 
     # Filter by trials if provided
     if trials is not None:
@@ -107,17 +162,7 @@ def get_no_repeat_performance(
 
     # Filter by difficulty if provided
     if difficulty is not None:
-        difficulties = (
-            [difficulty] if isinstance(difficulty, (int, np.integer)) else list(difficulty)
-        )
-        experiment = get_schema("experiment")
-        difficulty_trials = (
-            experiment.Condition.MatchPort()
-            * experiment.Trial()
-            & f"difficulty in ({', '.join(str(d) for d in difficulties)})"
-            & {"animal_id": animal_id, "session": session}
-        ).fetch("trial_idx")
-        df = df[df["trial_idx"].isin(difficulty_trials)]
+        df = df[df["trial_idx"].isin(get_trial_ids_at_difficulty(animal_id, session, difficulty))]
         if df.empty:
             return None
 

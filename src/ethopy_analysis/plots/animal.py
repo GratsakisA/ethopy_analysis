@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ethopy_analysis.data.loaders import get_sessions
-from ethopy_analysis.data.analysis import get_performance, trials_per_session
+from ethopy_analysis.data.analysis import get_difficulties, get_performance, trials_per_session
 from ethopy_analysis.db.schemas import get_schema
 from ethopy_analysis.plots.utils import get_task_color, save_plot
 
@@ -172,66 +172,140 @@ def find_uniq_pos(arr: List) -> Tuple[List, List[int]]:
     return uniq_value, uniq_starts
 
 
+def _get_task_names(animal_id: int, sessions: List[int]) -> List[str]:
+    """Return the task name of each session, in the same order as sessions.
+
+    Sessions without a task are named "unknown".
+    """
+    experiment = get_schema("experiment")
+    rows = (
+        experiment.Session.Task()
+        & [f"session={session}" for session in sessions]
+        & f"animal_id={animal_id}"
+    ).fetch(as_dict=True)
+    task_by_session = {row["session"]: row["task_name"].split("/")[-1] for row in rows}
+    return [task_by_session.get(sess, "unknown") for sess in sessions]
+
+
+def _resolve_difficulties(difficulty, available: List[int]) -> List:
+    """Turn the difficulty argument into a list of difficulties to plot.
+
+    None means every available difficulty. A list (e.g. [1] or [1, 2]) gives those
+    difficulties. If no difficulty is available, returns [None], which means all
+    trials together.
+
+    Raises:
+        TypeError: If difficulty is neither None nor a list or tuple.
+    """
+    if difficulty is None:
+        return available if available else [None]
+    if not isinstance(difficulty, (list, tuple)):
+        raise TypeError(
+            f"difficulty must be None or a list, e.g. [1] or [1, 2]; got {difficulty!r}"
+        )
+    return [int(d) for d in difficulty]
+
+
+def _difficulty_label(difficulty) -> str:
+    return "all difficulties" if difficulty is None else f"difficulty {difficulty}"
+
+
+def _draw_session_lines(
+    ax,
+    plot_sessions: List[int],
+    prtcls: List[str],
+    series: Dict[str, List[Optional[float]]],
+    title: str,
+    ylabel: str,
+) -> None:
+    """Draw one line per series on ax, with a colored background per task name."""
+    n = len(plot_sessions)
+    x = list(range(1, n + 1))
+
+    protocols, starts = find_uniq_pos(prtcls)
+    bounds = starts + [n]
+    for i, name in enumerate(protocols):
+        ax.axvspan(
+            bounds[i] + 0.5,
+            bounds[i + 1] + 0.5,
+            facecolor=get_task_color(name),
+            label=name,
+        )
+
+    line_colors = plt.cm.tab10.colors
+    for j, (label, values) in enumerate(series.items()):
+        values = [np.nan if v is None else v for v in values]
+        ax.plot(
+            x,
+            values,
+            marker=11,
+            color=line_colors[j % len(line_colors)],
+            label=label,
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_sessions, rotation=45)
+    ax.set_xlim(0, n + 1)
+    ax.set_xlabel("Session _ids")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend(loc="best")
+    ax.grid(alpha=0.3)
+
+
 def plot_session_performance(
     animal_id: int,
     sessions: List[int],
     perf_func: callable,
     save_path: Optional[str] = None,
-) -> List[float]:
+    difficulty=None,
+) -> Dict[str, List[float]]:
     """Plot session performance over time with protocol visualization.
 
     Creates a line plot showing performance across sessions, with colored background
-    regions indicating different experimental protocols. This helps visualize how
-    performance changes over time and across different task conditions.
+    regions indicating different experimental protocols. If several difficulties are
+    plotted, each difficulty gets its own colored line.
 
     Args:
         animal_id: The animal identifier to analyze.
         sessions: List of session IDs to include in the analysis.
-        perf_func: Function that calculates performance for a given animal_id and session.
-            Should have signature: perf_func(animal_id: int, session: int) -> float
+        perf_func: Function that calculates performance for a given animal_id, session
+            and difficulty. Should have signature:
+            perf_func(animal_id: int, session: int, difficulty=None) -> Optional[float]
         save_path: Path to save the plot image. If None, plot is not saved.
+        difficulty: A list of difficulties (e.g. [2] or [1, 2]), or None for every
+            available difficulty in the sessions.
 
     Returns:
-        List of performance values for each session, in the same order as input sessions.
-
+        Dict mapping each plotted difficulty label to its performance values, in the
+        same order as input sessions.
     """
-    experiment = get_schema("experiment")
-    protocols, color_layer = [], [0]
-    task_session_dj = (
-        experiment.Session.Task()
-        & [f"session={session}" for session in sessions]
-        & f"animal_id={animal_id}"
-    )
-    prtcls = task_session_dj.fetch("task_name")
-    prtcls = [prtcl.split("/")[-1] for prtcl in prtcls]
-    sessions = task_session_dj.fetch("session")
     if len(sessions) == 0:
         print("No session available")
-    perfs = [perf_func(animal_id, sess) for sess in sessions]
+        return {}
 
-    protocols, color_layer = find_uniq_pos(prtcls)
-    color_layer.append(sessions[-1])
-    plt.figure(figsize=(20, 5))
-    plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
-    plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
-    for i in range(0, len(color_layer) - 1):
-        plt.axvspan(
-            color_layer[i] + 0.5,
-            color_layer[i + 1] + 0.5,
-            facecolor=get_task_color(protocols[i]),
-            label=protocols[i],
-        )
-    plt.xlim(0, len(perfs) + 1)
-    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-    plt.title(f"Animal_id: {animal_id}")
-    plt.xlabel("Session _ids")
-    plt.ylabel("Performace")
-    plt.grid()
+    available = get_difficulties(animal_id, sessions)
+    print(
+        "Available difficulties: "
+        + (", ".join(str(d) for d in available) if available else "none")
+    )
+
+    prtcls = _get_task_names(animal_id, sessions)
+    series = {}
+    for d in _resolve_difficulties(difficulty, available):
+        series[_difficulty_label(d)] = [
+            perf_func(animal_id, sess, difficulty=d) for sess in sessions
+        ]
+
+    fig, ax = plt.subplots(figsize=(20, 5))
+    _draw_session_lines(
+        ax, sessions, prtcls, series, f"Animal_id: {animal_id}", "Performance"
+    )
 
     if save_path:
-        save_plot(plt.gcf(), save_path)
+        save_plot(fig, save_path)
 
-    return perfs
+    return series
 
 
 def plot_session_no_repeat_performance(
@@ -239,6 +313,8 @@ def plot_session_no_repeat_performance(
     sessions: List[int],
     perf_func: callable,
     save_path: Optional[str] = None,
+    plot_repeat: bool = False,
+    difficulty=None,
 ) -> List[float]:
     """Plot session performance excluding repeated trials.
 
@@ -252,6 +328,10 @@ def plot_session_no_repeat_performance(
         perf_func: Function that calculates no-repeat performance for a given animal_id and session.
             Should have signature: perf_func(animal_id: int, session: int) -> Optional[float]
         save_path: Path to save the plot image. If None, plot is not saved.
+        plot_repeat: If True, also plot performance including repeated trials in a
+            second panel, side by side with the same y-axis.
+        difficulty: Difficulties used for the repeated-trials panel: a list (e.g. [2]
+            or [1, 2]), or None for every available difficulty.
 
     Returns:
         List of performance values for each session, in the same order as input sessions.
@@ -265,40 +345,39 @@ def plot_session_no_repeat_performance(
         return perfs
     plot_sessions = [sess for sess, _ in plotted]
     plot_perfs = [perf for _, perf in plotted]
+    prtcls = _get_task_names(animal_id, plot_sessions)
 
-    experiment = get_schema("experiment")
-    task_rows = (
-        experiment.Session.Task()
-        & [f"session={session}" for session in plot_sessions]
-        & f"animal_id={animal_id}"
-    ).fetch(as_dict=True)
-    task_by_session = {
-        row["session"]: row["task_name"].split("/")[-1] for row in task_rows
-    }
-    prtcls = [task_by_session.get(sess, "unknown") for sess in plot_sessions]
-
-    protocols, starts = find_uniq_pos(prtcls)
-    bounds = starts + [len(plot_perfs)]
-
-    plt.figure(figsize=(20, 5))
-    plt.plot(range(1, len(plot_perfs) + 1, 1), plot_perfs, marker=11)
-    plt.xticks(range(1, len(plot_perfs) + 1, 1), plot_sessions, rotation=45)
-    for i in range(len(protocols)):
-        plt.axvspan(
-            bounds[i] + 0.5,
-            bounds[i + 1] + 0.5,
-            facecolor=get_task_color(protocols[i]),
-            label=protocols[i],
+    no_repeat_series = {"no repeated trials": plot_perfs}
+    if not plot_repeat:
+        fig, ax = plt.subplots(figsize=(20, 5))
+        _draw_session_lines(
+            ax,
+            plot_sessions,
+            prtcls,
+            no_repeat_series,
+            f"No repeated trials | Animal_id: {animal_id}",
+            "Performance",
         )
-    plt.xlim(0, len(plot_perfs) + 1)
-    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-    plt.title(f"No repeated trials | Animal_id: {animal_id}")
-    plt.xlabel("Session _ids")
-    plt.ylabel("Performance")
-    plt.grid(alpha=0.3)
+    else:
+        fig, (ax_no_repeat, ax_repeat) = plt.subplots(1, 2, figsize=(20, 5), sharey=True)
+        _draw_session_lines(
+            ax_no_repeat, plot_sessions, prtcls, no_repeat_series,
+            "No repeated trials", "Performance",
+        )
+        repeat_series = {}
+        available = get_difficulties(animal_id, plot_sessions)
+        for d in _resolve_difficulties(difficulty, available):
+            repeat_series[_difficulty_label(d)] = [
+                get_performance(animal_id, sess, difficulty=d) for sess in plot_sessions
+            ]
+        _draw_session_lines(
+            ax_repeat, plot_sessions, prtcls, repeat_series,
+            "Including repeated trials", "Performance",
+        )
+        fig.suptitle(f"Animal_id: {animal_id}")
 
     if save_path:
-        save_plot(plt.gcf(), save_path)
+        save_plot(fig, save_path)
 
     return perfs
 
