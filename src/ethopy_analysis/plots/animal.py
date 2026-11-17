@@ -420,14 +420,6 @@ def plot_session_no_repeat_performance(
         Dict mapping each line label to its performance values, in the same order as
         input sessions.
     """
-    print(
-        "Available difficulties: "
-        + (
-            ", ".join(str(d) for d in get_difficulties(animal_id, sessions))
-            or "none"
-        )
-    )
-
     if difficulty is None:
         wanted = [None]
     else:
