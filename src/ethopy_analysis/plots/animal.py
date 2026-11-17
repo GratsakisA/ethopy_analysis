@@ -262,21 +262,34 @@ def _draw_session_lines(
 
 
 def _add_legends(fig, task_handles, line_handles) -> None:
-    """Place the "task_conf" and "difficulties" legends outside the plot, on the right."""
+    """Place the "task_confs" and "difficulties" legends outside the plot, on the right.
+
+    The difficulties legend is placed directly below the task legend, measured from
+    the drawn figure, so the two never overlap.
+    """
     fig.subplots_adjust(right=0.82)
+    anchor_y = 0.92
     if task_handles:
-        fig.legend(
+        task_legend = fig.legend(
             handles=task_handles,
-            title="task_conf",
+            title="task_confs",
             loc="upper left",
-            bbox_to_anchor=(0.83, 0.92),
+            bbox_to_anchor=(0.83, anchor_y),
+            ncol=max(1, -(-len(task_handles) // 8)),
         )
+        if line_handles:
+            fig.canvas.draw()
+            task_box = task_legend.get_window_extent().transformed(
+                fig.transFigure.inverted()
+            )
+            anchor_y = task_box.y0 - 0.04
     if line_handles:
         fig.legend(
             handles=line_handles,
             title="difficulties",
             loc="upper left",
-            bbox_to_anchor=(0.83, 0.6),
+            bbox_to_anchor=(0.83, anchor_y),
+            ncol=max(1, -(-len(line_handles) // 8)),
         )
 
 
