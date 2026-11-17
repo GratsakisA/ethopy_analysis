@@ -256,17 +256,40 @@ def plot_session_no_repeat_performance(
     Returns:
         List of performance values for each session, in the same order as input sessions.
     """
+    experiment = get_schema("experiment")
+    task_rows = (
+        experiment.Session.Task()
+        & [f"session={session}" for session in sessions]
+        & f"animal_id={animal_id}"
+    ).fetch(as_dict=True)
+    task_by_session = {
+        row["session"]: row["task_name"].split("/")[-1] for row in task_rows
+    }
+    prtcls = [task_by_session.get(sess, "unknown") for sess in sessions]
+
     perfs = [perf_func(animal_id, sess) for sess in sessions]
+
+    protocols, starts = find_uniq_pos(prtcls)
+    bounds = starts + [len(perfs)]
+    color = plt.cm.Pastel1(np.linspace(0, 1, len(protocols)))
 
     plt.figure(figsize=(20, 5))
     plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
     plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
+    for i in range(len(protocols)):
+        plt.axvspan(
+            bounds[i] + 0.5,
+            bounds[i + 1] + 0.5,
+            facecolor=color[i],
+            label=protocols[i],
+        )
     plt.xlim(0, len(perfs) + 1)
     plt.ylim(0, 1)
+    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     plt.title(f"No repeated trials | Animal_id: {animal_id}")
     plt.xlabel("Session _ids")
     plt.ylabel("Performance")
-    plt.grid()
+    plt.grid(alpha=0.3)
 
     if save_path:
         save_plot(plt.gcf(), save_path)

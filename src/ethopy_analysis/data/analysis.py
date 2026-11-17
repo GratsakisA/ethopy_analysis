@@ -114,9 +114,6 @@ def get_no_repeat_performance(
         ).fetch("trial_idx")
         df = df[df["trial_idx"].isin(difficulty_trials)]
         if df.empty:
-            print(
-                f"Warning: No trials found at difficulty {difficulty} - cannot calculate performance"
-            )
             return None
 
     # Keep only decisive trials, in chronological order
