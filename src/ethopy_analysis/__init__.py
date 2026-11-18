@@ -38,6 +38,7 @@ from ethopy_analysis.data import (
     get_trial_licks,
     get_trial_proximities,
     get_performance,
+    get_no_repeat_performance,
     session_summary,
 )
 
@@ -71,6 +72,7 @@ __all__ = [
     # Analysis functions
     "get_performance",
     "session_summary",
+    "get_no_repeat_performance",
     # Database schema access
     "get_schema",
     "get_all_schemas",
