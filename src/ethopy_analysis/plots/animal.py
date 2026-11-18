@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 
 from ethopy_analysis.data.loaders import get_sessions
-from ethopy_analysis.data.analysis import get_performance, trials_per_session
+from ethopy_analysis.data.analysis import get_difficulties, get_performance, trials_per_session
 from ethopy_analysis.db.schemas import get_schema
-from ethopy_analysis.plots.utils import save_plot
+from ethopy_analysis.plots.utils import get_task_color, save_plot
 
 
 def plot_session_date(
@@ -172,67 +172,304 @@ def find_uniq_pos(arr: List) -> Tuple[List, List[int]]:
     return uniq_value, uniq_starts
 
 
+def _get_task_names(animal_id: int, sessions: List[int]) -> List[str]:
+    """Return the task name of each session, in the same order as sessions.
+
+    Sessions without a task are named "unknown".
+    """
+    experiment = get_schema("experiment")
+    rows = (
+        experiment.Session.Task()
+        & [f"session={session}" for session in sessions]
+        & f"animal_id={animal_id}"
+    ).fetch(as_dict=True)
+    task_by_session = {row["session"]: row["task_name"].split("/")[-1] for row in rows}
+    return [task_by_session.get(sess, "unknown") for sess in sessions]
+
+
+def _resolve_difficulties(difficulty, available: List[int]) -> List:
+    """Turn the difficulty argument into the list of series to plot.
+
+    None or "None": one total line over all trials, ignoring difficulty ([None]).
+    "All": one line per available difficulty.
+    A list such as [1] or [1, 2]: one line per listed difficulty.
+
+    Raises:
+        TypeError: If difficulty is not None, "All", "None", or a list or tuple.
+    """
+    if difficulty is None or (isinstance(difficulty, str) and difficulty.lower() == "none"):
+        return [None]
+    if isinstance(difficulty, str) and difficulty.lower() == "all":
+        return available if available else [None]
+    if not isinstance(difficulty, (list, tuple)):
+        raise TypeError(
+            f'difficulty must be None, "All", or a list, e.g. [1] or [1, 2]; got {difficulty!r}'
+        )
+    return [int(d) for d in difficulty]
+
+
+def _difficulty_label(difficulty) -> str:
+    return "total" if difficulty is None else f"difficulty {difficulty}"
+
+
+def _series_color(label: str):
+    """Return the line color for a series label.
+
+    "difficulty N" lines get a color from N, so the same difficulty has the same
+    color in every plot. Other lines (e.g. "total", "no repeated trials") are black.
+    """
+    if label.startswith("difficulty "):
+        palette = plt.cm.tab10.colors
+        difficulty = int(label.split()[1])
+        return palette[difficulty % len(palette)]
+    return "black"
+
+
+def _draw_session_lines(
+    ax,
+    plot_sessions: List[int],
+    prtcls: List[str],
+    series: Dict[str, List[Optional[float]]],
+    title: str,
+    ylabel: str,
+):
+    """Draw background bands per task and one line per series on ax.
+
+    No legend is drawn here. Returns (task_handles, line_handles) so the caller can
+    place the legends.
+    """
+    n = len(plot_sessions)
+    x = list(range(1, n + 1))
+
+    protocols, starts = find_uniq_pos(prtcls)
+    bounds = starts + [n]
+    task_handles = []
+    for i, name in enumerate(protocols):
+        band = ax.axvspan(
+            bounds[i] + 0.5,
+            bounds[i + 1] + 0.5,
+            facecolor=get_task_color(name),
+            alpha=0.5,
+            label=name,
+        )
+        task_handles.append(band)
+
+    line_handles = []
+    for label, values in series.items():
+        values = [np.nan if v is None else v for v in values]
+        color = _series_color(label)
+        # dashed for lines including repeated trials, solid otherwise
+        linestyle = "--" if "incl. repeats" in label else "-"
+        (line,) = ax.plot(
+            x, values, marker=11, color=color, linestyle=linestyle, label=label
+        )
+        line_handles.append(line)
+
+    ax.set_axisbelow(True)  # keep the grid under the semi-transparent bands
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_sessions, rotation=45)
+    ax.set_xlim(0, n + 1)
+    ax.set_xlabel("Session _ids")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(alpha=0.3)
+    return task_handles, line_handles
+
+
+def _add_legends(fig, task_handles, line_handles) -> None:
+    """Place the "task_confs" and "difficulties" legends outside the plot, on the right.
+
+    The difficulties legend is placed directly below the task legend, measured from
+    the drawn figure, so the two never overlap.
+    """
+    fig.subplots_adjust(right=0.82)
+    anchor_y = 0.92
+    if task_handles:
+        task_legend = fig.legend(
+            handles=task_handles,
+            title="task_confs",
+            loc="upper left",
+            bbox_to_anchor=(0.83, anchor_y),
+            ncol=max(1, -(-len(task_handles) // 8)),
+        )
+        if line_handles:
+            fig.canvas.draw()
+            task_box = task_legend.get_window_extent().transformed(
+                fig.transFigure.inverted()
+            )
+            anchor_y = task_box.y0 - 0.04
+    if line_handles:
+        fig.legend(
+            handles=line_handles,
+            title="difficulties",
+            loc="upper left",
+            bbox_to_anchor=(0.83, anchor_y),
+            ncol=max(1, -(-len(line_handles) // 8)),
+        )
+
+
+def _keep_sessions_with_values(sessions, prtcls, series):
+    """Keep only the sessions where at least one series has a value."""
+    keep = [
+        i
+        for i in range(len(sessions))
+        if any(values[i] is not None for values in series.values())
+    ]
+    return (
+        [sessions[i] for i in keep],
+        [prtcls[i] for i in keep],
+        {label: [values[i] for i in keep] for label, values in series.items()},
+    )
+
+
 def plot_session_performance(
     animal_id: int,
     sessions: List[int],
     perf_func: callable,
     save_path: Optional[str] = None,
-) -> List[float]:
+    difficulty=None,
+) -> Dict[str, List[float]]:
     """Plot session performance over time with protocol visualization.
 
     Creates a line plot showing performance across sessions, with colored background
-    regions indicating different experimental protocols. This helps visualize how
-    performance changes over time and across different task conditions.
+    regions for each task. Each difficulty gets its own colored line. Sessions that
+    have none of the plotted difficulties are left out of the plot.
 
     Args:
         animal_id: The animal identifier to analyze.
         sessions: List of session IDs to include in the analysis.
-        perf_func: Function that calculates performance for a given animal_id and session.
-            Should have signature: perf_func(animal_id: int, session: int) -> float
+        perf_func: Function that calculates performance for a given animal_id, session
+            and difficulty. Should have signature:
+            perf_func(animal_id: int, session: int, difficulty=None) -> Optional[float]
         save_path: Path to save the plot image. If None, plot is not saved.
+        difficulty: Which lines to plot:
+            - None or "None": one "total" line across sessions, using all trials
+              regardless of difficulty.
+            - "All": one line per difficulty that exists in the sessions.
+            - a list, e.g. [2] or [1, 2]: one line per listed difficulty.
 
     Returns:
-        List of performance values for each session, in the same order as input sessions.
-
+        Dict mapping each line label to its performance values, in the same order as
+        input sessions.
     """
-    experiment = get_schema("experiment")
-    protocols, color_layer = [], [0]
-    task_session_dj = (
-        experiment.Session.Task()
-        & [f"session={session}" for session in sessions]
-        & f"animal_id={animal_id}"
-    )
-    prtcls = task_session_dj.fetch("task_name")
-    prtcls = [prtcl.split("/")[-1] for prtcl in prtcls]
-    sessions = task_session_dj.fetch("session")
     if len(sessions) == 0:
         print("No session available")
-    perfs = [perf_func(animal_id, sess) for sess in sessions]
+        return {}
 
-    protocols, color_layer = find_uniq_pos(prtcls)
-    color_layer.append(sessions[-1])
-    plt.figure(figsize=(20, 5))
-    plt.plot(range(1, len(perfs) + 1, 1), perfs, marker=11)
-    plt.xticks(range(1, len(perfs) + 1, 1), sessions, rotation=45)
-    color = plt.cm.Pastel1(np.linspace(0, 1, len(color_layer)))
-    for i in range(0, len(color_layer) - 1):
-        plt.axvspan(
-            color_layer[i] + 0.5,
-            color_layer[i + 1] + 0.5,
-            facecolor=color[i],
-            label=protocols[i],
-        )
-    plt.xlim(0, len(perfs) + 1)
-    plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
-    plt.title(f"Animal_id: {animal_id}")
-    plt.xlabel("Session _ids")
-    plt.ylabel("Performace")
-    plt.grid()
+    available = get_difficulties(animal_id, sessions)
+    print(
+        "Available difficulties: "
+        + (", ".join(str(d) for d in available) if available else "none")
+    )
+
+    prtcls = _get_task_names(animal_id, sessions)
+    series = {}
+    for d in _resolve_difficulties(difficulty, available):
+        series[_difficulty_label(d)] = [
+            perf_func(animal_id, sess, difficulty=d) for sess in sessions
+        ]
+
+    plot_sessions, plot_prtcls, plot_series = _keep_sessions_with_values(
+        sessions, prtcls, series
+    )
+    if len(plot_sessions) == 0:
+        print("No session with the selected difficulty")
+        return series
+
+    fig, ax = plt.subplots(figsize=(20, 5))
+    task_handles, line_handles = _draw_session_lines(
+        ax, plot_sessions, plot_prtcls, plot_series, f"Animal_id: {animal_id}", "Performance"
+    )
+    _add_legends(fig, task_handles, line_handles)
 
     if save_path:
-        save_plot(plt.gcf(), save_path)
+        save_plot(fig, save_path)
 
-    return perfs
+    return series
+
+
+def plot_session_no_repeat_performance(
+    animal_id: int,
+    sessions: List[int],
+    perf_func: callable,
+    save_path: Optional[str] = None,
+    repeat_line: bool = False,
+    difficulty=None,
+) -> Dict[str, List[float]]:
+    """Plot session performance excluding repeated trials, per difficulty.
+
+    Each difficulty gets a color. Its no-repeat line is solid, and with repeat_line=True
+    its line including repeated trials is dashed, in the same color. Sessions where no
+    selected line has a value are left out of the plot.
+
+    Args:
+        animal_id: The animal identifier to analyze.
+        sessions: List of session IDs to include in the analysis.
+        perf_func: Function that calculates no-repeat performance for a given animal_id,
+            session and difficulty. Should have signature:
+            perf_func(animal_id: int, session: int, difficulty=None) -> Optional[float]
+            (get_no_repeat_performance has this signature).
+        save_path: Path to save the plot image. If None, plot is not saved.
+        repeat_line: If True, also draw the performance including repeated trials as a
+            dashed line for each difficulty.
+        difficulty: A list of difficulties (e.g. [2] or [1, 2]), or None for one
+            "total" line over all trials. Difficulties without data are printed and
+            not plotted.
+
+    Returns:
+        Dict mapping each line label to its performance values, in the same order as
+        input sessions.
+    """
+    if difficulty is None:
+        wanted = [None]
+    else:
+        available = get_difficulties(animal_id, sessions)
+        wanted = []
+        for d in difficulty:
+            if d in available:
+                wanted.append(d)
+            else:
+                print(f"No data for difficulty {d}, not plotted")
+        if not wanted:
+            print("No difficulties with data, nothing plotted")
+            return {}
+
+    prtcls = _get_task_names(animal_id, sessions)
+
+    # Solid no-repeat line and dashed repeat line per difficulty, in legend order
+    series = {}
+    for d in wanted:
+        series[f"{_difficulty_label(d)} (no repeats)"] = [
+            perf_func(animal_id, sess, difficulty=d) for sess in sessions
+        ]
+        if repeat_line:
+            series[f"{_difficulty_label(d)} (incl. repeats)"] = [
+                get_performance(animal_id, sess, difficulty=d) for sess in sessions
+            ]
+
+    plot_sessions, plot_prtcls, plot_series = _keep_sessions_with_values(
+        sessions, prtcls, series
+    )
+    if len(plot_sessions) == 0:
+        print("No session with the selected difficulty")
+        return series
+
+    title = "Including repeated trials" if repeat_line else "No repeated trials"
+    fig, ax = plt.subplots(figsize=(20, 5))
+    task_handles, line_handles = _draw_session_lines(
+        ax,
+        plot_sessions,
+        plot_prtcls,
+        plot_series,
+        f"{title} | Animal_id: {animal_id}",
+        "Performance",
+    )
+    _add_legends(fig, task_handles, line_handles)
+
+    if save_path:
+        save_plot(fig, save_path)
+
+    return series
 
 
 def plot_trial_per_session(

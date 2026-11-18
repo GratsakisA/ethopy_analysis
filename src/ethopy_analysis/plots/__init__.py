@@ -7,6 +7,7 @@ making them independent of the data source (database, files, etc.).
 
 from .animal import (
     plot_session_performance,
+    plot_session_no_repeat_performance,
     plot_performance_liquid,
     plot_session_date,
     plot_trial_per_session,
@@ -32,6 +33,7 @@ from .utils import validate_dataframe, create_figure
 __all__ = [
     # Animal-level plots
     "plot_session_performance",
+    "plot_session_no_repeat_performance",
     "plot_performance_liquid",
     "plot_session_date",
     "plot_trial_per_session",
