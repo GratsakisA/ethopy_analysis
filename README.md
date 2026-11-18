@@ -22,45 +22,68 @@ Ethopy Analysis provides a modern, modular approach to behavioral data analysis 
 
 ## Installation
 
-Requires **Python 3.9+**.
+Requires **Python 3.11+**.
 
 ### From Source (Development)
 
-Use a virtual environment to keep the install isolated:
+This project uses [uv](https://docs.astral.sh/uv/) to manage the environment. Install uv once:
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
+pip install uv
 ```
 
-Then install:
+Then clone the repository and create the environment:
 
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd ethopy_analysis
 
-# Install in development mode
+# Create .venv and install the package in editable mode
+uv sync
+```
+
+Run commands inside the environment with `uv run`, for example `uv run python` or `uv run pytest`.
+
+<details>
+<summary>Using pip instead</summary>
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
 pip install -e .
 ```
 
+</details>
+
 ### Reproducible install
 
-`pyproject.toml` declares supported version *ranges*. To install one exact combination that has been verified end-to-end against a live EthoPy database, use the checked-in constraints file:
+`pyproject.toml` declares supported version *ranges*. `uv.lock` records the exact versions resolved for this project. To install exactly those versions:
+
+```bash
+uv sync --locked
+```
+
+For pip, the checked-in `constraints.txt` pins every package to a known-good version that has been verified end-to-end against a live EthoPy database:
 
 ```bash
 pip install -e . -c constraints.txt
 ```
 
-Use this if you hit a dependency-related failure; it pins every transitive package to a known-good version.
+Use this if you hit a dependency-related failure.
 
 ### Optional extras
 
+Add the extras you need with `--extra`:
+
 ```bash
-pip install -e ".[notebooks]"  # Jupyter kernel for examples/
-pip install -e ".[dev]"        # pytest, black, isort, flake8, mypy
-pip install -e ".[docs]"       # mkdocs + material theme
+uv sync --extra notebooks  # Jupyter kernel for examples/
+uv sync --extra dev        # pytest, black, isort, flake8, mypy
+uv sync --extra docs       # mkdocs + material theme
+uv sync --extra dev --extra docs  # combine extras
 ```
+
+With pip, use `pip install -e ".[notebooks]"`, `".[dev]"`, or `".[docs]"` in the same way.
 
 ### Dependencies
 
@@ -254,7 +277,7 @@ Check out the `examples/` directory for comprehensive notebooks:
 - **`animal_analysis_example.ipynb`**: Comprehensive animal-level analysis
 - **`session_analysis_example.ipynb`**: Detailed session-level analysis
 
-Install the notebook extra first: `pip install -e ".[notebooks]"`
+Install the notebook extra first: `uv sync --extra notebooks`
 
 ## Contributing
 
