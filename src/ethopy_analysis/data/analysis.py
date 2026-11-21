@@ -403,21 +403,19 @@ def weight_check(
 
 def get_response_counts(
     animal_id: int,
-    from_session: int,
-    to_session: int,
+    sessions: List[int],
     difficulties: Optional[List[int]] = None,
-    manual_exclusion_sessions: Optional[List[int]] = None,
+    min_trials: int = 0,
 ) -> pd.DataFrame:
     """Count Reward, Punish and Abort trials per session.
 
     Args:
         animal_id (int): Animal identifier
-        from_session (int): First session number to include
-        to_session (int): Last session number to include
+        sessions (List[int]): Session numbers to include, e.g. sessions['session'].values
         difficulties (Optional[List[int]], optional): Only count trials at these
             difficulties, e.g. [1, 2]. Defaults to None (all difficulties).
-        manual_exclusion_sessions (Optional[List[int]], optional): Sessions to skip.
-            Defaults to None.
+        min_trials (int, optional): Skip sessions with fewer Reward, Punish and
+            Abort trials than this. Defaults to 0 (no minimum).
 
     Returns:
         pd.DataFrame: One row per session and state, with columns session, state and
@@ -425,7 +423,6 @@ def get_response_counts(
     """
     experiment = get_schema("experiment")
     stimulus = get_schema("stimulus")
-    manual_exclusion_sessions = manual_exclusion_sessions or []
 
     difficulty = (
         experiment.Condition.MatchPort() * experiment.Trial()
@@ -434,8 +431,8 @@ def get_response_counts(
     valid_sessions = (restr - experiment.Session.Excluded).fetch("session")
 
     rows = []
-    for session in range(from_session, to_session + 1):
-        if session not in valid_sessions or session in manual_exclusion_sessions:
+    for session in sessions:
+        if session not in valid_sessions:
             continue
 
         key = {"animal_id": animal_id, "session": session}
@@ -450,7 +447,7 @@ def get_response_counts(
             query = query & [{"difficulty": d} for d in difficulties]
 
         session_trials = query.fetch(format="frame").reset_index()
-        if session_trials.empty:
+        if session_trials.empty or len(session_trials) < min_trials:
             continue
 
         for state in ["Reward", "Punish", "Abort"]:

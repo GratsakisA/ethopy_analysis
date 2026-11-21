@@ -590,8 +590,6 @@ def plot_animal_weight(
 def plot_response_counts(
     response_counts: pd.DataFrame,
     animal_id: int,
-    from_session: int,
-    to_session: int,
     save_path: Optional[str] = None,
 ):
     """Plot Reward, Punish and Abort trial counts per session.
@@ -603,8 +601,6 @@ def plot_response_counts(
         response_counts: Output of get_response_counts(), with columns session, state
             and n_trials.
         animal_id: The animal identifier, used in the title.
-        from_session: First session number, used in the title.
-        to_session: Last session number, used in the title.
         save_path: Path to save the plot image. If None, plot is not saved.
 
     Returns:
@@ -615,6 +611,7 @@ def plot_response_counts(
         return None
 
     sessions = sorted(response_counts["session"].unique())
+    from_session, to_session = sessions[0], sessions[-1]
     session_index = {session: idx for idx, session in enumerate(sessions)}
     df = response_counts.assign(session_idx=response_counts["session"].map(session_index))
 
