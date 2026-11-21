@@ -47,7 +47,7 @@ def get_sessions(
 
     sessions_dj = animal_session_tmt - experiment.Session.Excluded
     if min_trials:
-        trials_session = trials_per_session(animal_id, min_trials=2, format="dj")
+        trials_session = trials_per_session(animal_id, min_trials=min_trials, format="dj")
         sessions_dj = trials_session * sessions_dj
 
     if format == "dj":
@@ -56,8 +56,11 @@ def get_sessions(
 
 
 def get_trials(
-    animal_id: int, session: int, format: str = "df", remove_abort: bool = False
-) -> Union[pd.DataFrame, Any]:
+    animal_id: int, 
+    session: int, 
+    format: str = "df", 
+    remove_abort: bool = False
+    ) -> Union[pd.DataFrame, Any]:
     """
     Retrieve trial data for a specific animal session.
 
