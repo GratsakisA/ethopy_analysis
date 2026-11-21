@@ -9,7 +9,12 @@ import numpy as np
 import pandas as pd
 
 from ethopy_analysis.data.loaders import get_sessions
-from ethopy_analysis.data.analysis import get_difficulties, get_performance, trials_per_session
+from ethopy_analysis.data.analysis import (
+    get_difficulties,
+    get_performance,
+    get_response_counts,
+    trials_per_session,
+)
 from ethopy_analysis.db.schemas import get_schema
 from ethopy_analysis.plots.utils import get_task_color, save_plot
 
@@ -587,7 +592,7 @@ def plot_animal_weight(
     return fig, ax
 
 
-def plot_response_counts(
+def _draw_response_counts(
     response_counts: pd.DataFrame,
     animal_id: int,
     save_path: Optional[str] = None,
@@ -656,4 +661,32 @@ def plot_response_counts(
         save_plot(fig, save_path)
 
     return ax
+
+
+def plot_response_counts(
+    animal_id: int,
+    sessions: List[int],
+    difficulties: Optional[List[int]] = None,
+    min_trials: int = 0,
+    save_path: Optional[str] = None,
+) -> pd.DataFrame:
+    """Count and plot Reward, Punish and Abort trials per session.
+
+    Args:
+        animal_id: The animal identifier.
+        sessions: Session numbers to include, e.g. sessions['session'].values.
+        difficulties: Only count trials at these difficulties, e.g. [1, 2].
+            Defaults to None (all difficulties).
+        min_trials: Skip sessions with fewer Reward, Punish and Abort trials than
+            this. Defaults to 0 (no minimum).
+        save_path: Path to save the plot image. If None, plot is not saved.
+
+    Returns:
+        pd.DataFrame: The counts that were plotted (see get_response_counts()).
+    """
+    response_counts = get_response_counts(
+        animal_id, sessions, difficulties=difficulties, min_trials=min_trials
+    )
+    _draw_response_counts(response_counts, animal_id, save_path=save_path)
+    return response_counts
 
