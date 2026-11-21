@@ -399,3 +399,68 @@ def weight_check(
         "below_threshold": below_threshold,
         "overdue": overdue,
     }
+
+
+def get_response_counts(
+    animal_id: int,
+    from_session: int,
+    to_session: int,
+    difficulties: Optional[List[int]] = None,
+    manual_exclusion_sessions: Optional[List[int]] = None,
+) -> pd.DataFrame:
+    """Count Reward, Punish and Abort trials per session.
+
+    Args:
+        animal_id (int): Animal identifier
+        from_session (int): First session number to include
+        to_session (int): Last session number to include
+        difficulties (Optional[List[int]], optional): Only count trials at these
+            difficulties, e.g. [1, 2]. Defaults to None (all difficulties).
+        manual_exclusion_sessions (Optional[List[int]], optional): Sessions to skip.
+            Defaults to None.
+
+    Returns:
+        pd.DataFrame: One row per session and state, with columns session, state and
+        n_trials. Empty (but with these columns) if no session has trials.
+    """
+    experiment = get_schema("experiment")
+    stimulus = get_schema("stimulus")
+    manual_exclusion_sessions = manual_exclusion_sessions or []
+
+    difficulty = (
+        experiment.Condition.MatchPort() * experiment.Trial()
+    ).proj("difficulty")
+    restr = experiment.Session() & {"animal_id": animal_id}
+    valid_sessions = (restr - experiment.Session.Excluded).fetch("session")
+
+    rows = []
+    for session in range(from_session, to_session + 1):
+        if session not in valid_sessions or session in manual_exclusion_sessions:
+            continue
+
+        key = {"animal_id": animal_id, "session": session}
+        query = (
+            stimulus.StimCondition.Trial
+            * experiment.Trial.StateOnset
+            * difficulty
+            & key
+            & 'state in ("Reward", "Punish", "Abort")'
+        )
+        if difficulties is not None:
+            query = query & [{"difficulty": d} for d in difficulties]
+
+        session_trials = query.fetch(format="frame").reset_index()
+        if session_trials.empty:
+            continue
+
+        for state in ["Reward", "Punish", "Abort"]:
+            rows.append(
+                {
+                    "session": session,
+                    "state": state,
+                    "n_trials": int((session_trials["state"] == state).sum()),
+                }
+            )
+
+    return pd.DataFrame(rows, columns=["session", "state", "n_trials"])
+

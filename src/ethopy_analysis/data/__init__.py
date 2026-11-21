@@ -33,6 +33,7 @@ from .loaders import (
 from .analysis import (
     get_performance,
     get_no_repeat_performance,
+    get_response_counts,
     session_summary,
     trials_per_session,
     get_port_exit_to_lick_latency,
@@ -76,6 +77,7 @@ __all__ = [
     # Analysis functions
     "get_performance",
     "get_no_repeat_performance",
+    "get_response_counts",
     "session_summary",
     "trials_per_session",
     "get_port_exit_to_lick_latency",

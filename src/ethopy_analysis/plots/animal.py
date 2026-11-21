@@ -585,3 +585,78 @@ def plot_animal_weight(
         save_plot(fig, save_path)
 
     return fig, ax
+
+
+def plot_response_counts(
+    response_counts: pd.DataFrame,
+    animal_id: int,
+    from_session: int,
+    to_session: int,
+    save_path: Optional[str] = None,
+):
+    """Plot Reward, Punish and Abort trial counts per session.
+
+    For each session, Reward and Punish are stacked bars on the left, Abort is a bar
+    on the right, and a faint gray bar shows the total number of trials.
+
+    Args:
+        response_counts: Output of get_response_counts(), with columns session, state
+            and n_trials.
+        animal_id: The animal identifier, used in the title.
+        from_session: First session number, used in the title.
+        to_session: Last session number, used in the title.
+        save_path: Path to save the plot image. If None, plot is not saved.
+
+    Returns:
+        matplotlib Axes with the plot, or None if there is no data.
+    """
+    if response_counts.empty:
+        print("No response data available for plotting.")
+        return None
+
+    sessions = sorted(response_counts["session"].unique())
+    session_index = {session: idx for idx, session in enumerate(sessions)}
+    df = response_counts.assign(session_idx=response_counts["session"].map(session_index))
+
+    counts = (
+        df.pivot(index="session_idx", columns="state", values="n_trials")
+        .reindex(columns=["Reward", "Punish", "Abort"])
+        .fillna(0)
+    )
+    totals = df.groupby("session_idx")["n_trials"].sum()
+    x = counts.index.to_numpy()
+
+    fig, ax = plt.subplots(figsize=(max(8, len(sessions) * 1.2), 5))
+    ax.bar(
+        totals.index, totals.values, width=0.85, color="gray", alpha=0.10,
+        label="Total trials", zorder=1,
+    )
+    ax.bar(x - 0.18, counts["Reward"], width=0.3, color="#36BF00", label="Reward", zorder=2)
+    ax.bar(
+        x - 0.18, counts["Punish"], bottom=counts["Reward"], width=0.3,
+        color="#FF0000", label="Punish", zorder=2,
+    )
+    ax.bar(x + 0.18, counts["Abort"], width=0.3, color="#000000", label="Abort", zorder=2)
+
+    ax.set_xticks(range(len(sessions)))
+    ax.set_xticklabels(sessions, rotation=80)
+    ax.set_xlabel("Session idx", fontsize=18)
+    ax.set_ylabel("Number of trials", fontsize=18)
+    ax.set_title(
+        f"Response counts across all trial modalities "
+        f"(Animal: {animal_id}, Sessions: {from_session}-{to_session})",
+        fontsize=18,
+    )
+    ax.tick_params(axis="both", labelsize=12)
+    ax.legend(
+        title="Response", fontsize=12, title_fontsize=12,
+        bbox_to_anchor=(1.01, 1), loc="upper left",
+    )
+    ax.grid(axis="y", alpha=0.3)
+    fig.subplots_adjust(right=0.85)
+
+    if save_path:
+        save_plot(fig, save_path)
+
+    return ax
+

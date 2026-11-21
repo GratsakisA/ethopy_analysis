@@ -11,6 +11,7 @@ from .animal import (
     plot_performance_liquid,
     plot_session_date,
     plot_trial_per_session,
+    plot_response_counts,
 )
 from .session import (
     plot_trials,
@@ -37,6 +38,7 @@ __all__ = [
     "plot_performance_liquid",
     "plot_session_date",
     "plot_trial_per_session",
+    "plot_response_counts",
     # Session-level plots
     "plot_trials",
     "difficultyPlot",
